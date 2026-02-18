@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:   # allows manual trigger
+  workflow_dispatch:
 
 jobs:
   terraform:
@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      AWS_REGION: us-east-1   # change region if needed
+      AWS_REGION: us-east-1
+      TF_VAR_ssh_public_key: ${{ secrets.EC2_SSH_PUBLIC_KEY }}
 
     steps:
       - name: Checkout repository

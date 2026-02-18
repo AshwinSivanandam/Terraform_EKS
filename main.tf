@@ -10,6 +10,16 @@ variable "cluster_name" {
   default = "eks-lab"
 }
 
+variable "aws_access_key" {
+  sensitive = true
+}
+
+variable "aws_secret_key" {
+  sensitive = true
+}
+
+variable "ssh_public_key" {}
+
 ############################
 # VPC
 ############################
@@ -189,9 +199,87 @@ resource "aws_eks_node_group" "nodes" {
 }
 
 ############################
+# EC2 for KUBECTL
+############################
+
+resource "aws_security_group" "bastion_sg" {
+  name   = "bastion-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "bastion-sg"
+  }
+}
+
+resource "aws_instance" "bastion" {
+  ami           = "ami-0b6c6ebed2801a5cb" # Ubuntu
+  instance_type = "t3.medium"
+
+  subnet_id = aws_subnet.subnet1.id
+
+  vpc_security_group_ids = [aws_security_group.bastion_sg.id]
+  key_name              = aws_key_pair.mykey.key_name
+
+  associate_public_ip_address = true
+
+  user_data = <<-EOF
+              #!/bin/bash
+              apt update -y
+              apt upgrade -y
+
+              # Install AWS CLI
+              apt install unzip -y
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              ./aws/install
+
+              # Install kubectl
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+              # Configure AWS credentials
+              mkdir -p /root/.aws
+              cat <<EOT > /root/.aws/credentials
+              [default]
+              aws_access_key_id=${var.aws_access_key}
+              aws_secret_access_key=${var.aws_secret_key}
+              region=us-east-1
+              EOT
+              EOF
+
+  tags = {
+    Name = "eks-bastion"
+  }
+}
+
+
+resource "aws_key_pair" "mykey" {
+  key_name   = "eks-key"
+  public_key = var.ssh_public_key
+}
+
+############################
 # OUTPUT
 ############################
 
 output "cluster_name" {
   value = aws_eks_cluster.cluster.name
+}
+
+output "bastion_ip" {
+  value = aws_instance.bastion.public_ip
 }
